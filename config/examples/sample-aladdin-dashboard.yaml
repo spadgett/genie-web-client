@@ -1,0 +1,202 @@
+apiVersion: aladdin.openshift.io/v1alpha1
+kind: AladdinDashboard
+metadata:
+  name: cluster-monitoring-dashboard
+spec:
+  title: "Cluster Monitoring Overview"
+  description: "A comprehensive dashboard showing cluster health, resource utilization, and active alerts"
+  refreshInterval: "5m"
+  tags:
+    - monitoring
+    - observability
+    - cluster-health
+  owner: "cluster-admin"
+  layout:
+    columns: 12
+    panels:
+    - id: cluster-cpu-usage
+      title: "Cluster CPU Usage"
+      position:
+        x: 0
+        y: 0
+        width: 6
+        height: 3
+      component:
+        type: Chart
+        version: v1
+        config:
+          chartType: "line"
+          title: "CPU Usage Over Time"
+          yAxis:
+            label: "CPU %"
+            min: 0
+            max: 100
+          xAxis:
+            label: "Time"
+          series:
+            - name: "CPU Usage"
+              color: "#0066CC"
+      dataSource:
+        toolCall:
+          server: ObservabilityMCP
+          tool: "prometheus_query"
+          arguments:
+            query: "100 - (avg by (instance) (irate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)"
+            range: "1h"
+          requestId: "req-cluster-cpu-001"
+        cachePolicy: ShortTerm
+    
+    - id: cluster-memory-usage
+      title: "Cluster Memory Usage"
+      position:
+        x: 6
+        y: 0
+        width: 6
+        height: 3
+      component:
+        type: Chart
+        version: v1
+        config:
+          chartType: "area"
+          title: "Memory Usage Over Time"
+          yAxis:
+            label: "Memory (GB)"
+          xAxis:
+            label: "Time"
+          series:
+            - name: "Used Memory"
+              color: "#FF6B6B"
+            - name: "Available Memory"
+              color: "#4ECDC4"
+      dataSource:
+        toolCall:
+          server: ObservabilityMCP
+          tool: "prometheus_query"
+          arguments:
+            query: "(node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / 1024 / 1024 / 1024"
+            range: "1h"
+          requestId: "req-cluster-mem-001"
+        cachePolicy: ShortTerm
+    
+    - id: active-alerts
+      title: "Active Alerts"
+      position:
+        x: 0
+        y: 3
+        width: 8
+        height: 4
+      component:
+        type: Table
+        version: v1
+        config:
+          columns:
+            - field: "alertname"
+              header: "Alert"
+              sortable: true
+            - field: "severity"
+              header: "Severity"
+              sortable: true
+            - field: "instance"
+              header: "Instance"
+            - field: "summary"
+              header: "Summary"
+          pagination:
+            enabled: true
+            pageSize: 10
+          sorting:
+            defaultSort:
+              field: "severity"
+              direction: "desc"
+      dataSource:
+        toolCall:
+          server: ObservabilityMCP
+          tool: "alerts_query"
+          arguments:
+            state: "firing"
+            severity: ["critical", "warning"]
+          requestId: "req-alerts-001"
+        cachePolicy: NoCache
+    
+    - id: cluster-metrics
+      title: "Key Metrics"
+      position:
+        x: 8
+        y: 3
+        width: 4
+        height: 4
+      component:
+        type: Metric
+        version: v1
+        config:
+          metrics:
+            - label: "Nodes Ready"
+              value: "{nodeCount}"
+              unit: ""
+              color: "green"
+              trend: "up"
+            - label: "Pods Running"
+              value: "{podCount}"
+              unit: ""
+              color: "blue"
+            - label: "CPU Usage"
+              value: "{cpuPercent}"
+              unit: "%"
+              color: "orange"
+              threshold:
+                warning: 70
+                critical: 85
+            - label: "Memory Usage"
+              value: "{memPercent}"
+              unit: "%"
+              color: "purple"
+              threshold:
+                warning: 80
+                critical: 90
+      dataSource:
+        toolCall:
+          server: OpenShiftMCP
+          tool: "cluster_status"
+          arguments:
+            include: ["nodes", "pods", "resources"]
+          requestId: "req-cluster-status-001"
+        cachePolicy: ShortTerm
+    
+    - id: namespace-resources
+      title: "Namespace Resource Usage"
+      position:
+        x: 0
+        y: 7
+        width: 12
+        height: 3
+      component:
+        type: Resource
+        version: v1
+        config:
+          resourceType: "namespace"
+          displayMode: "table"
+          columns:
+            - field: "name"
+              header: "Namespace"
+            - field: "cpu_requests"
+              header: "CPU Requests"
+              format: "cores"
+            - field: "memory_requests" 
+              header: "Memory Requests"
+              format: "bytes"
+            - field: "pod_count"
+              header: "Pods"
+            - field: "status"
+              header: "Status"
+          filters:
+            - field: "status"
+              operator: "equals"
+              value: "Active"
+      dataSource:
+        toolCall:
+          server: OpenShiftMCP
+          tool: "list_namespaces"
+          arguments:
+            includeMetrics: true
+            includeResourceUsage: true
+          requestId: "req-namespaces-001"
+        cachePolicy: LongTerm
